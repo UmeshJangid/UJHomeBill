@@ -8,7 +8,7 @@ A modern Android application built with Jetpack Compose for calculating and mana
 
 ## 📱 Screenshot
 
-![UJHomeBill App Screenshot](Screenshot_20250823_194300.png)
+![UJHomeBill App Screenshot](Screenshot_20250823_195500.png)
 
 ## ✨ Features
 
@@ -87,6 +87,68 @@ Common Area Cost = Common Area Units × Rate per Unit
 Common Area Cost per Flat = Common Area Cost ÷ Number of Flats
 Final Flat Bill = (Flat Units × Rate per Unit) + Common Area Cost per Flat
 ```
+
+## 📤 **Sample Shareable Messages**
+
+The app generates professional, formatted messages for easy sharing. Here are examples in both languages:
+
+### **Hindi Output Sample:**
+```
+🏠 UJHomeBill - बिजली बिल सारांश
+=========================================
+
+📊 यूनिट्स विवरण:
+• कुल फ्लैट यूनिट्स: 1324 kWh
+• बिल्डिंग कुल यूनिट्स: 1458 kWh
+• कॉमन एरिया यूनिट्स: 134 kWh
+• दर प्रति यूनिट: ₹8.53/kWh
+
+💰 फ्लैट-वार बिल:
+कैलाश: 485 kWh - ₹4367.07 (₹4138 + ₹229)
+अजय: 148 kWh - ₹1491.48 (₹1263 + ₹229)
+मनोज: 316 kWh - ₹2925.01 (₹2696 + ₹229)
+राकेश: 227 kWh - ₹2165.58 (₹1937 + ₹229)
+रमेश: 148 kWh - ₹1491.48 (₹1263 + ₹229)
+
+🏢 कॉमन एरिया कॉस्ट:
+• कुल: ₹1143.41
+• प्रति फ्लैट: ₹228.60
+
+💡 नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर
+```
+
+### **English Output Sample:**
+```
+🏠 UJHomeBill - Electricity Bill Summary
+=========================================
+
+📊 Units Breakdown:
+• Total Flat Units: 1324 kWh
+• Building Total Units: 1458 kWh
+• Common Area Units: 134 kWh
+• Rate per Unit: ₹8.53/kWh
+
+💰 Flat-wise Bills:
+Kailash: 485 kWh - ₹4367.07 (₹4138 + ₹229)
+Ajay: 148 kWh - ₹1491.48 (₹1263 + ₹229)
+Manoj: 316 kWh - ₹2925.01 (₹2696 + ₹229)
+Rakesh: 227 kWh - ₹2165.58 (₹1937 + ₹229)
+Ramesh: 148 kWh - ₹1491.48 (₹1263 + ₹229)
+
+🏢 Common Area Cost:
+• Total: ₹1143.41
+• Per Flat: ₹228.60
+
+💡 Note: Each flat's final bill = Individual cost + Common area share
+```
+
+### **Key Features of Shared Messages:**
+- **📱 WhatsApp/SMS Ready**: Formatted for messaging apps
+- **📊 Complete Breakdown**: Shows all calculations transparently
+- **🏠 Flat Units Included**: Helps with next month's readings
+- **💰 Cost Transparency**: Individual + common area costs shown
+- **🌐 Bilingual**: Available in Hindi and English
+- **📋 Copy-Paste Ready**: Professional formatting maintained
 
 ## 🛡️ **Data Validation**
 
