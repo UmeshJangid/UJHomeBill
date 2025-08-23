@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +99,7 @@ fun HomeBillScreen() {
     
     // Language and UI state
     var isHindi by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
     // State for flats with string resources
@@ -151,15 +153,16 @@ fun HomeBillScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(scrollState)
     ) {
         // Header Section with Gradient
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp)
+                .height(200.dp)
                 .background(
-                    Brush.horizontalGradient(
+                    Brush.verticalGradient(
                         colors = listOf(
                             MaterialTheme.colorScheme.primary,
                             MaterialTheme.colorScheme.secondary
@@ -167,43 +170,152 @@ fun HomeBillScreen() {
                     )
                 )
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Language Toggle
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.White.copy(alpha = 0.2f)
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    onClick = { isHindi = !isHindi }
+                // Top Row with Language Toggle and Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
+                    // Language Toggle
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White.copy(alpha = 0.15f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = { isHindi = !isHindi },
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Language",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isHindi) "EN" else "हिं",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    
+                    // Action Buttons
                     Row(
-                        modifier = Modifier.padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "Language",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isHindi) "EN" else "हिं",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { 
+                                    // Validate inputs before generating PDF
+                                    if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
+                                        Toast.makeText(
+                                            context,
+                                            if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else if (flats.all { it.units.isBlank() }) {
+                                        Toast.makeText(
+                                            context,
+                                            if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        generatePdfBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Done,
+                                    contentDescription = if (isHindi) "PDF सेव करें" else "Save PDF",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { 
+                                    // Validate inputs before sharing
+                                    if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
+                                        Toast.makeText(
+                                            context,
+                                            if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else if (flats.all { it.units.isBlank() }) {
+                                        Toast.makeText(
+                                            context,
+                                            if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        shareElectricityBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = if (isHindi) "बिल शेयर करें" else stringResource(R.string.share_bill),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { 
+                                    showResetDialog = true
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = if (isHindi) "फॉर्म रीसेट करें" else "Reset Form",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
                 }
                 
-                // App Title and Icon
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Centered App Title and Icon
                 Column(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
@@ -229,67 +341,6 @@ fun HomeBillScreen() {
                         textAlign = TextAlign.Center
                     )
                 }
-                
-                // Action Buttons
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconButton(
-                        onClick = { 
-                            // Validate inputs before generating PDF
-                            if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
-                                Toast.makeText(
-                                    context,
-                                    if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else if (flats.all { it.units.isBlank() }) {
-                                Toast.makeText(
-                                    context,
-                                    if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                generatePdfBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Done,
-                            contentDescription = if (isHindi) "PDF सेव करें" else "Save PDF",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    
-                    IconButton(
-                        onClick = { 
-                            // Validate inputs before sharing
-                            if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
-                                Toast.makeText(
-                                    context,
-                                    if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else if (flats.all { it.units.isBlank() }) {
-                                Toast.makeText(
-                                    context,
-                                    if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                shareElectricityBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = if (isHindi) "बिल शेयर करें" else stringResource(R.string.share_bill),
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
             }
         }
         
@@ -311,8 +362,8 @@ fun HomeBillScreen() {
                     title = if (isHindi) "इस महीने का बिल" else stringResource(R.string.this_month_bill),
                     value = monthlyBillAmount,
                     onValueChange = { newValue ->
-                        // Allow only numbers and single decimal point
-                        if (newValue.matches(Regex("^\\d*\\.?\\d*$"))) {
+                        // Money validation: max 7 digits before decimal + max 2 decimal places
+                        if (newValue.matches(Regex("^\\d{0,7}(\\.\\d{0,2})?$")) || newValue.isEmpty()) {
                             monthlyBillAmount = newValue
                         }
                     },
@@ -327,8 +378,8 @@ fun HomeBillScreen() {
                     title = if (isHindi) "कुल बिल्डिंग यूनिट्स" else stringResource(R.string.total_building_units),
                     value = unitsUsed,
                     onValueChange = { newValue ->
-                        // Allow only numbers
-                        if (newValue.matches(Regex("^\\d*$"))) {
+                        // Units validation: max 6 digits integer only
+                        if (newValue.matches(Regex("^\\d{0,6}$")) || newValue.isEmpty()) {
                             unitsUsed = newValue
                         }
                     },
@@ -572,6 +623,61 @@ fun HomeBillScreen() {
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+    
+    // Reset confirmation dialog
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = {
+                Text(
+                    text = if (isHindi) "फॉर्म रीसेट करें" else "Reset Form",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Text(
+                    text = if (isHindi) 
+                        "क्या आप वाकई सभी फील्ड्स को रीसेट करना चाहते हैं? यह सभी डेटा को साफ़ कर देगा।" 
+                    else 
+                        "Are you sure you want to reset all fields? This will clear all data.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Reset all form fields
+                        monthlyBillAmount = ""
+                        unitsUsed = ""
+                        ratePerUnit = "0.00"
+                        flats = flats.map { it.copy(units = "") }
+                        showResetDialog = false
+                        
+                        Toast.makeText(
+                            context,
+                            if (isHindi) "फॉर्म रीसेट हो गया" else "Form reset successfully",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                ) {
+                    Text(
+                        text = if (isHindi) "रीसेट करें" else "Reset",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showResetDialog = false }
+                ) {
+                    Text(
+                        text = if (isHindi) "रद्द करें" else "Cancel",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -686,7 +792,8 @@ fun FlatInputRow(
                 OutlinedTextField(
                     value = flat.units,
                     onValueChange = { newValue ->
-                        if (newValue.matches(Regex("^\\d*$"))) {
+                        // Units validation: max 6 digits integer only
+                        if (newValue.matches(Regex("^\\d{0,6}$")) || newValue.isEmpty()) {
                             onFlatChange(flat.copy(units = newValue))
                         }
                     },
@@ -983,9 +1090,10 @@ fun shareElectricityBill(
             appendLine("💰 फ्लैट-वार बिल:")
             flats.forEach { flat ->
                 if (flat.units.isNotBlank()) {
-                    val individualCost = (flat.units.toIntOrNull() ?: 0) * rate
+                    val units = flat.units.toIntOrNull() ?: 0
+                    val individualCost = units * rate
                     val totalCost = individualCost + commonAreaCostPerFlat
-                    appendLine("${flat.name}: ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
+                    appendLine("${flat.name}: $units kWh - ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
                 }
             }
             appendLine()
@@ -1009,9 +1117,10 @@ fun shareElectricityBill(
             appendLine("💰 Flat-wise Bills:")
             flats.forEach { flat ->
                 if (flat.units.isNotBlank()) {
-                    val individualCost = (flat.units.toIntOrNull() ?: 0) * rate
+                    val units = flat.units.toIntOrNull() ?: 0
+                    val individualCost = units * rate
                     val totalCost = individualCost + commonAreaCostPerFlat
-                    appendLine("${flat.name}: ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
+                    appendLine("${flat.name}: $units kWh - ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
                 }
             }
             appendLine()
