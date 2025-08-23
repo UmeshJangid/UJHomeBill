@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- House shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,25L25,50V83H83V50L54,25Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"/>
+    
+    <!-- Roof -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M54,25L25,50H83L54,25Z"/>
+    
+    <!-- Lightning bolt -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M58,45L52,60H56L50,75L65,57H60L65,45H58Z"/>
+</vector>

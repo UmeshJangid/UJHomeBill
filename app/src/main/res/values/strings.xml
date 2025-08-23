@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">UJHomeBill</string>
+    <string name="electricity_calculator">Electricity Bill Calculator</string>
+    <string name="track_consumption">Track your electricity consumption</string>
+    <string name="calculate_bill">Calculate Bill</string>
+    <string name="this_month">This Month</string>
+    <string name="this_month_bill">This Month Bill</string>
+    <string name="total_building_units">Total Building Units</string>
+    <string name="rate_per_unit">Rate per Unit</string>
+    <string name="auto_calculated">Auto-calculated</string>
+    <string name="individual_flat_readings">Individual Flat Readings</string>
+    <string name="bill_summary">Bill Summary</string>
+    <string name="units_breakdown">Units Breakdown</string>
+    <string name="total_flat_units">Total Flat Units</string>
+    <string name="building_total_units">Building Total Units</string>
+    <string name="common_area_units">Common Area Units</string>
+    <string name="common_area_cost">Common Area Cost</string>
+    <string name="total_common_area_cost">Total Common Area Cost</string>
+    <string name="cost_per_flat">Cost per Flat</string>
+    <string name="total_bill">Total Bill</string>
+    <string name="note_final_bill">Note: Each flat\'s final bill = Individual cost + Common area share</string>
+    <string name="flat_kailash">Kailash</string>
+    <string name="flat_ajay">Ajay</string>
+    <string name="flat_manoj">Manoj</string>
+    <string name="flat_rakesh">Rakesh</string>
+    <string name="flat_ramesh">Ramesh</string>
+    <string name="save_bill">Save Bill</string>
+    <string name="share_bill">Share Bill</string>
+    <string name="language">Language</string>
+    <string name="english">English</string>
+    <string name="hindi">हिंदी</string>
+</resources>

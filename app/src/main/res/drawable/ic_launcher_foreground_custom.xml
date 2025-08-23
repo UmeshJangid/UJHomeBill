@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#1E88E5"
+        android:pathData="M54,54m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0"/>
+    
+    <!-- House Shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,25L35,40v25h38V40L54,25z"/>
+    
+    <!-- Roof -->
+    <path
+        android:fillColor="#43A047"
+        android:pathData="M30,40l24,-20l24,20l-6,0l-18,-15l-18,15z"/>
+    
+    <!-- Electric Bolt -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M58,35l-4,8h3l-6,12l4,-8h-3l6,-12z"/>
+    
+    <!-- Window -->
+    <path
+        android:fillColor="#1E88E5"
+        android:pathData="M42,45h6v8h-6z"/>
+    
+    <!-- Door -->
+    <path
+        android:fillColor="#795548"
+        android:pathData="M62,53h8v12h-8z"/>
+    
+</vector>

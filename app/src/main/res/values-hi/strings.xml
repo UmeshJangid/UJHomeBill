@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">UJHomeBill</string>
+    <string name="electricity_calculator">बिजली बिल कैलकुलेटर</string>
+    <string name="track_consumption">अपनी बिजली की खपत को ट्रैक करें</string>
+    <string name="calculate_bill">बिल की गणना करें</string>
+    <string name="this_month">इस महीने</string>
+    <string name="this_month_bill">इस महीने का बिल</string>
+    <string name="total_building_units">कुल बिल्डिंग यूनिट्स</string>
+    <string name="rate_per_unit">दर प्रति यूनिट</string>
+    <string name="auto_calculated">स्वचालित गणना</string>
+    <string name="individual_flat_readings">व्यक्तिगत फ्लैट रीडिंग</string>
+    <string name="bill_summary">बिल सारांश</string>
+    <string name="units_breakdown">यूनिट्स विवरण</string>
+    <string name="total_flat_units">कुल फ्लैट यूनिट्स</string>
+    <string name="building_total_units">बिल्डिंग कुल यूनिट्स</string>
+    <string name="common_area_units">कॉमन एरिया यूनिट्स</string>
+    <string name="common_area_cost">कॉमन एरिया कॉस्ट</string>
+    <string name="total_common_area_cost">कुल कॉमन एरिया कॉस्ट</string>
+    <string name="cost_per_flat">कॉस्ट प्रति फ्लैट</string>
+    <string name="total_bill">कुल बिल</string>
+    <string name="note_final_bill">नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर</string>
+    <string name="flat_kailash">फ्लैट कैलाश</string>
+    <string name="flat_ajay">फ्लैट अजय</string>
+    <string name="flat_manoj">फ्लैट मनोज</string>
+    <string name="flat_rakesh">फ्लैट राकेश</string>
+    <string name="flat_ramesh">फ्लैट रमेश</string>
+    <string name="save_bill">बिल सेव करें</string>
+    <string name="share_bill">बिल शेयर करें</string>
+    <string name="language">भाषा</string>
+    <string name="english">English</string>
+    <string name="hindi">हिंदी</string>
+</resources>
