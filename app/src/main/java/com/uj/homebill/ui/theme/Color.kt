@@ -2,24 +2,29 @@ package com.uj.homebill.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Electric/Energy Theme Colors - Light Mode
-val ElectricBlue = Color(0xFF1E88E5)
-val PowerGreen = Color(0xFF43A047) 
-val EnergyOrange = Color(0xFFFF9800)
-val LightningYellow = Color(0xFFFFC107)
-val DeepNavy = Color(0xFF0D47A1)
-val SoftBlue = Color(0xFFE3F2FD)
+// Clean Blue/White Theme Colors - Light Mode
+val BlueAccent = Color(0xFF1E88E5)       // Primary blue
+val BlueDark = Color(0xFF1565C0)         // Darker blue for secondary
+val BlueLight = Color(0xFFE3F2FD)        // Light blue for containers
+val BlueSoft = Color(0xFFBBDEFB)         // Soft blue for backgrounds
 
-// Electric/Energy Theme Colors - Dark Mode
-val ElectricBlue80 = Color(0xFF90CAF9)
-val PowerGreen80 = Color(0xFF81C784)
-val EnergyOrange80 = Color(0xFFFFCC02)
-val LightningYellow80 = Color(0xFFFFF59D)
-val DeepNavy80 = Color(0xFF3F51B5)
-val SoftBlue80 = Color(0xFF1A237E)
-
-// Neutral Colors
-val NeutralGrey = Color(0xFF424242)
-val LightGrey = Color(0xFFF5F5F5)
-val DarkGrey = Color(0xFF212121)
+// Surface and Background Colors - Light Mode
+val White = Color(0xFFFFFFFF)
+val LightGray = Color(0xFFF5F5F5)
 val WhiteSmoke = Color(0xFFFAFAFA)
+
+// Text Colors
+val DarkText = Color(0xFF212121)
+val GrayText = Color(0xFF757575)
+val LightText = Color(0xFFBDBDBD)
+
+// Accent Colors
+val GreenAccent = Color(0xFF43A047)      // For success states
+val OrangeAccent = Color(0xFFFF9800)     // For warnings
+val RedError = Color(0xFFE53935)         // For errors
+
+// Dark Mode Colors
+val BlueDarkMode = Color(0xFF90CAF9)     // Primary blue for dark mode
+val BlueDarkAccent = Color(0xFF64B5F6)   // Secondary blue for dark mode
+val DarkSurface = Color(0xFF1E1E1E)
+val DarkBackground = Color(0xFF121212)

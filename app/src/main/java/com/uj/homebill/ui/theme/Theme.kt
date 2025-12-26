@@ -5,61 +5,64 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = ElectricBlue80,
-    secondary = PowerGreen80,
-    tertiary = EnergyOrange80,
-    background = DarkGrey,
-    surface = Color(0xFF1E1E1E),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.Black,
-    onBackground = Color.White,
-    onSurface = Color.White,
-    primaryContainer = DeepNavy80,
-    onPrimaryContainer = Color.White
+    primary = BlueDarkMode,
+    onPrimary = DarkText,
+    primaryContainer = BlueDarkAccent,
+    onPrimaryContainer = White,
+    secondary = BlueDarkAccent,
+    onSecondary = DarkText,
+    secondaryContainer = Color(0xFF0D47A1),
+    onSecondaryContainer = White,
+    tertiary = BlueDarkMode,
+    onTertiary = DarkText,
+    tertiaryContainer = BlueDarkAccent,
+    onTertiaryContainer = White,
+    background = DarkBackground,
+    onBackground = White,
+    surface = DarkSurface,
+    onSurface = White,
+    surfaceVariant = Color(0xFF2D2D2D),
+    onSurfaceVariant = Color(0xFFE0E0E0),
+    error = RedError,
+    onError = White
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = ElectricBlue,
-    secondary = PowerGreen,
-    tertiary = EnergyOrange,
-    background = WhiteSmoke,
-    surface = Color.White,
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = DarkGrey,
-    onSurface = DarkGrey,
-    primaryContainer = SoftBlue,
-    onPrimaryContainer = DeepNavy,
-    secondaryContainer = Color(0xFFE8F5E8),
-    onSecondaryContainer = Color(0xFF1B5E20)
+    primary = BlueAccent,
+    onPrimary = White,
+    primaryContainer = BlueLight,
+    onPrimaryContainer = BlueDark,
+    secondary = BlueDark,
+    onSecondary = White,
+    secondaryContainer = BlueSoft,
+    onSecondaryContainer = BlueDark,
+    tertiary = BlueAccent,
+    onTertiary = White,
+    tertiaryContainer = BlueLight,
+    onTertiaryContainer = BlueDark,
+    background = LightGray,
+    onBackground = DarkText,
+    surface = White,
+    onSurface = DarkText,
+    surfaceVariant = WhiteSmoke,
+    onSurfaceVariant = GrayText,
+    error = RedError,
+    onError = White
 )
 
 @Composable
 fun HomeBillTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // Dynamic color disabled to keep consistent blue/white theme
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

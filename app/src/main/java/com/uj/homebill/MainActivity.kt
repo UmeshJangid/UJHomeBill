@@ -12,9 +12,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,24 +23,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import android.content.Intent
@@ -47,13 +38,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import android.os.Environment
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
 import android.os.Build
 import androidx.core.content.FileProvider
 import android.net.Uri
@@ -62,13 +47,41 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.uj.homebill.ui.theme.HomeBillTheme
+import com.uj.homebill.viewmodel.BillViewModel
+import com.uj.homebill.viewmodel.SaveState
+import com.uj.homebill.data.repository.FlatReadingData
+import com.uj.homebill.screens.SettingsScreen
 
-// Data class for individual flat
+// Data class for individual flat with previous reading
 data class Flat(
     val name: String = "",
-    val units: String = ""
-)
+    val nameHindi: String = "",
+    val previousUnits: String = "0",
+    val currentUnits: String = ""
+) {
+    val unitsConsumed: Int
+        get() {
+            val prev = previousUnits.toIntOrNull() ?: 0
+            val curr = currentUnits.toIntOrNull() ?: 0
+            return if (curr >= prev) curr - prev else 0
+        }
+}
+
+// Data class for other common bills (water, maintenance, etc.)
+data class OtherBill(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val amount: String = ""
+) {
+    val amountValue: Double
+        get() = amount.toDoubleOrNull() ?: 0.0
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,11 +89,32 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             HomeBillTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                val navController = rememberNavController()
+                val viewModel: BillViewModel = viewModel()
+                
+                NavHost(
+                    navController = navController,
+                    startDestination = "home"
                 ) {
-                    HomeBillScreen()
+                    composable("home") {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            HomeBillScreen(
+                                viewModel = viewModel,
+                                navController = navController
+                            )
+                        }
+                    }
+                    composable("settings/{isHindi}") { backStackEntry ->
+                        val isHindi = backStackEntry.arguments?.getString("isHindi")?.toBoolean() ?: false
+                        SettingsScreen(
+                            viewModel = viewModel,
+                            navController = navController,
+                            isHindi = isHindi
+                        )
+                    }
                 }
             }
         }
@@ -89,49 +123,73 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeBillScreen() {
+fun HomeBillScreen(
+    viewModel: BillViewModel = viewModel(),
+    navController: NavHostController? = null
+) {
     val scrollState = rememberScrollState()
     
     // State for input values
     var monthlyBillAmount by remember { mutableStateOf("") }
-    var unitsUsed by remember { mutableStateOf("") }
+    var buildingUnits by remember { mutableStateOf("") }
     var ratePerUnit by remember { mutableStateOf("0.00") }
+    
+    // State for other common bills (water, maintenance, etc.)
+    var otherBills by remember { mutableStateOf(listOf<OtherBill>()) }
+    var showAddBillDialog by remember { mutableStateOf(false) }
+    var newBillName by remember { mutableStateOf("") }
+    var newBillAmount by remember { mutableStateOf("") }
     
     // Language and UI state
     var isHindi by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showSaveConfirmDialog by remember { mutableStateOf(false) }
+    var showSaveSuccessDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
-    // State for flats with string resources
-    val flatNames = if (isHindi) {
-        listOf("कैलाश", "अजय", "मनोज", "राकेश", "रमेश")
-    } else {
-        listOf(
-            stringResource(R.string.flat_kailash),
-            stringResource(R.string.flat_ajay), 
-            stringResource(R.string.flat_manoj),
-            stringResource(R.string.flat_rakesh),
-            stringResource(R.string.flat_ramesh)
+    // Collect latest readings from database
+    val latestReadings by viewModel.latestReadings.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    
+    // Flat names in both languages
+    val flatNamesEnglish = listOf("Kailash", "Ajay", "Manoj", "Rakesh", "Ramesh")
+    val flatNamesHindi = listOf("कैलाश", "अजय", "मनोज", "राकेश", "रमेश")
+    
+    // State for flats with previous readings from database
+    var flats by remember { mutableStateOf(
+        flatNamesEnglish.mapIndexed { index, name ->
+            Flat(
+                name = name,
+                nameHindi = flatNamesHindi[index],
+                previousUnits = "0",
+                currentUnits = ""
+            )
+        }
+    )}
+    
+    // Load previous readings from database when available
+    LaunchedEffect(latestReadings) {
+        if (latestReadings.isNotEmpty()) {
+            flats = flats.mapIndexed { index, flat ->
+                val savedReading = latestReadings.find { it.flatIndex == index }
+                flat.copy(
+                    previousUnits = savedReading?.lastReading?.toString() ?: "0"
+                )
+            }
+        }
+    }
+    
+    // Update flat display names when language changes
+    val displayFlats = flats.mapIndexed { index, flat ->
+        flat.copy(
+            name = if (isHindi) flatNamesHindi[index] else flatNamesEnglish[index]
         )
     }
     
-    var flats by remember { mutableStateOf(listOf(
-        Flat(flatNames[0], ""),
-        Flat(flatNames[1], ""),
-        Flat(flatNames[2], ""),
-        Flat(flatNames[3], ""),
-        Flat(flatNames[4], "")
-    )) }
-    
-    // Update flat names when language changes
-    flats = flats.mapIndexed { index, flat ->
-        flat.copy(name = flatNames[index])
-    }
-    
     // Calculate cost per unit automatically from overall bill
-    val costPerUnit = remember(monthlyBillAmount, unitsUsed) {
+    val costPerUnit = remember(monthlyBillAmount, buildingUnits) {
         val bill = monthlyBillAmount.toDoubleOrNull()
-        val units = unitsUsed.toDoubleOrNull()
+        val units = buildingUnits.toDoubleOrNull()
         if (bill != null && units != null && units > 0) {
             val rate = bill / units
             ratePerUnit = String.format("%.2f", rate)
@@ -143,12 +201,93 @@ fun HomeBillScreen() {
     }
     
     // Calculate totals and common area
-    val totalFlatUnits = flats.sumOf { it.units.toIntOrNull() ?: 0 }
-    val totalBuildingUnits = unitsUsed.toIntOrNull() ?: 0
+    val totalFlatUnits = flats.sumOf { it.unitsConsumed }
+    val totalBuildingUnits = buildingUnits.toIntOrNull() ?: 0
     val commonAreaUnits = if (totalBuildingUnits > totalFlatUnits) totalBuildingUnits - totalFlatUnits else 0
     val rate = ratePerUnit.toDoubleOrNull() ?: 0.0
     val commonAreaTotalCost = commonAreaUnits * rate
     val commonAreaCostPerFlat = if (flats.isNotEmpty()) commonAreaTotalCost / flats.size else 0.0
+    
+    // Calculate other bills total and per flat share
+    val otherBillsTotal = otherBills.sumOf { it.amountValue }
+    val otherBillsPerFlat = if (flats.isNotEmpty() && otherBillsTotal > 0) otherBillsTotal / flats.size else 0.0
+    
+    // Total additional cost per flat (common area + other bills)
+    val totalAdditionalCostPerFlat = commonAreaCostPerFlat + otherBillsPerFlat
+    
+    // Handle save state changes
+    LaunchedEffect(saveState) {
+        when (saveState) {
+            is SaveState.Success -> {
+                showSaveSuccessDialog = true
+                viewModel.resetSaveState()
+            }
+            is SaveState.Error -> {
+                Toast.makeText(context, (saveState as SaveState.Error).message, Toast.LENGTH_SHORT).show()
+                viewModel.resetSaveState()
+            }
+            else -> {}
+        }
+    }
+    
+    // Function to save and share
+    fun saveAndShare() {
+        // Validate inputs
+        if (monthlyBillAmount.isBlank() || buildingUnits.isBlank()) {
+            Toast.makeText(
+                context,
+                if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        
+        if (flats.all { it.currentUnits.isBlank() }) {
+            Toast.makeText(
+                context,
+                if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        
+        // Prepare flat reading data
+        val flatReadingsData = flats.mapIndexed { index, flat ->
+            val unitsConsumed = flat.unitsConsumed
+            val individualCost = unitsConsumed * rate
+            val totalCost = individualCost + totalAdditionalCostPerFlat
+            
+            FlatReadingData(
+                flatName = flatNamesEnglish[index],
+                flatNameHindi = flatNamesHindi[index],
+                previousReading = flat.previousUnits.toIntOrNull() ?: 0,
+                currentReading = flat.currentUnits.toIntOrNull() ?: 0,
+                unitsConsumed = unitsConsumed,
+                individualCost = individualCost,
+                totalCost = totalCost
+            )
+        }
+        
+        // Save to database
+        viewModel.saveBillRecord(
+            totalBillAmount = monthlyBillAmount.toDoubleOrNull() ?: 0.0,
+            totalBuildingUnits = totalBuildingUnits,
+            ratePerUnit = rate,
+            totalFlatUnits = totalFlatUnits,
+            commonAreaUnits = commonAreaUnits,
+            commonAreaTotalCost = commonAreaTotalCost,
+            commonAreaCostPerFlat = commonAreaCostPerFlat,
+            flatReadings = flatReadingsData,
+            isHindi = isHindi,
+            onSuccess = {
+                // Share after successful save
+                shareElectricityBill(context, monthlyBillAmount, buildingUnits, displayFlats, commonAreaCostPerFlat, otherBills, otherBillsPerFlat, rate, isHindi)
+            },
+            onError = { error ->
+                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
     
     Column(
         modifier = Modifier
@@ -156,19 +295,12 @@ fun HomeBillScreen() {
             .statusBarsPadding()
             .verticalScroll(scrollState)
     ) {
-        // Header Section with Gradient
+        // Header Section with Solid Blue
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
-                        )
-                    )
-                )
+                .background(MaterialTheme.colorScheme.primary)
         ) {
             Column(
                 modifier = Modifier
@@ -216,6 +348,27 @@ fun HomeBillScreen() {
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Settings Button
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { navController?.navigate("settings/$isHindi") }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = if (isHindi) "सेटिंग्स" else "Settings",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        
+                        // PDF Button
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = Color.White.copy(alpha = 0.15f)
@@ -225,21 +378,20 @@ fun HomeBillScreen() {
                         ) {
                             IconButton(
                                 onClick = { 
-                                    // Validate inputs before generating PDF
-                                    if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
+                                    if (monthlyBillAmount.isBlank() || buildingUnits.isBlank()) {
                                         Toast.makeText(
                                             context,
                                             if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                    } else if (flats.all { it.units.isBlank() }) {
+                                    } else if (flats.all { it.currentUnits.isBlank() }) {
                                         Toast.makeText(
                                             context,
                                             if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     } else {
-                                        generatePdfBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
+                                        generatePdfBill(context, monthlyBillAmount, buildingUnits, displayFlats, commonAreaCostPerFlat, otherBills, otherBillsPerFlat, rate, isHindi)
                                     }
                                 }
                             ) {
@@ -252,6 +404,7 @@ fun HomeBillScreen() {
                             }
                         }
                     
+                        // Share Button
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = Color.White.copy(alpha = 0.15f)
@@ -260,34 +413,18 @@ fun HomeBillScreen() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             IconButton(
-                                onClick = { 
-                                    // Validate inputs before sharing
-                                    if (monthlyBillAmount.isBlank() || unitsUsed.isBlank()) {
-                                        Toast.makeText(
-                                            context,
-                                            if (isHindi) "कृपया कुल बिल और यूनिट्स दर्ज करें" else "Please enter total bill and units",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else if (flats.all { it.units.isBlank() }) {
-                                        Toast.makeText(
-                                            context,
-                                            if (isHindi) "कृपया कम से कम एक फ्लैट का यूनिट दर्ज करें" else "Please enter units for at least one flat",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else {
-                                        shareElectricityBill(context, monthlyBillAmount, unitsUsed, flats, commonAreaCostPerFlat, isHindi)
-                                    }
-                                }
+                                onClick = { showSaveConfirmDialog = true }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Share,
-                                    contentDescription = if (isHindi) "बिल शेयर करें" else stringResource(R.string.share_bill),
+                                    contentDescription = if (isHindi) "बिल शेयर करें" else "Share Bill",
                                     tint = Color.White,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
                         
+                        // Reset Button
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = Color.White.copy(alpha = 0.15f)
@@ -296,9 +433,7 @@ fun HomeBillScreen() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             IconButton(
-                                onClick = { 
-                                    showResetDialog = true
-                                }
+                                onClick = { showResetDialog = true }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
@@ -335,7 +470,7 @@ fun HomeBillScreen() {
                     )
                     
                     Text(
-                        text = if (isHindi) "अपनी बिजली की खपत को ट्रैक करें" else stringResource(R.string.track_consumption),
+                        text = if (isHindi) "अपनी बिजली की खपत को ट्रैक करें" else "Track your electricity consumption",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.9f),
                         textAlign = TextAlign.Center
@@ -359,10 +494,9 @@ fun HomeBillScreen() {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 InputStatCard(
-                    title = if (isHindi) "इस महीने का बिल" else stringResource(R.string.this_month_bill),
+                    title = if (isHindi) "इस महीने का बिल" else "This Month Bill",
                     value = monthlyBillAmount,
                     onValueChange = { newValue ->
-                        // Money validation: max 7 digits before decimal + max 2 decimal places
                         if (newValue.matches(Regex("^\\d{0,7}(\\.\\d{0,2})?$")) || newValue.isEmpty()) {
                             monthlyBillAmount = newValue
                         }
@@ -375,16 +509,15 @@ fun HomeBillScreen() {
                 )
                 
                 InputStatCard(
-                    title = if (isHindi) "कुल बिल्डिंग यूनिट्स" else stringResource(R.string.total_building_units),
-                    value = unitsUsed,
+                    title = if (isHindi) "कुल बिल्डिंग यूनिट्स" else "Total Building Units",
+                    value = buildingUnits,
                     onValueChange = { newValue ->
-                        // Units validation: max 6 digits integer only
                         if (newValue.matches(Regex("^\\d{0,6}$")) || newValue.isEmpty()) {
-                            unitsUsed = newValue
+                            buildingUnits = newValue
                         }
                     },
                     icon = Icons.Default.Edit,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     placeholder = "0 kWh",
                     keyboardType = KeyboardType.Number,
                     modifier = Modifier.weight(1f)
@@ -421,7 +554,7 @@ fun HomeBillScreen() {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = if (isHindi) "दर प्रति यूनिट" else stringResource(R.string.rate_per_unit),
+                            text = if (isHindi) "दर प्रति यूनिट" else "Rate per Unit",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -432,7 +565,7 @@ fun HomeBillScreen() {
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = if (isHindi) "स्वचालित गणना" else stringResource(R.string.auto_calculated),
+                            text = if (isHindi) "स्वचालित गणना" else "Auto-calculated",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
@@ -442,7 +575,7 @@ fun HomeBillScreen() {
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Flats Section
+            // Flats Section with Previous and Current Reading
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -468,24 +601,60 @@ fun HomeBillScreen() {
                         Spacer(modifier = Modifier.width(12.dp))
                         
                         Text(
-                            text = if (isHindi) "व्यक्तिगत फ्लैट रीडिंग" else stringResource(R.string.individual_flat_readings),
+                            text = if (isHindi) "व्यक्तिगत फ्लैट रीडिंग" else "Individual Flat Readings",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Header row for columns
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (isHindi) "फ्लैट" else "Flat",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.width(70.dp)
+                        )
+                        Text(
+                            text = if (isHindi) "पिछला" else "Previous",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = if (isHindi) "वर्तमान" else "Current",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
                     
                     flats.forEachIndexed { index, flat ->
                         FlatInputRow(
-                            flat = flat,
+                            flat = flat.copy(
+                                name = if (isHindi) flatNamesHindi[index] else flatNamesEnglish[index]
+                            ),
                             onFlatChange = { newFlat ->
                                 flats = flats.toMutableList().apply {
-                                    this[index] = newFlat
+                                    this[index] = newFlat.copy(
+                                        name = flatNamesEnglish[index],
+                                        nameHindi = flatNamesHindi[index]
+                                    )
                                 }
                             },
                             rate = rate,
-                            commonAreaCostPerFlat = commonAreaCostPerFlat,
+                            commonAreaCostPerFlat = totalAdditionalCostPerFlat,
                             isHindi = isHindi
                         )
                         
@@ -498,15 +667,146 @@ fun HomeBillScreen() {
             
             Spacer(modifier = Modifier.height(12.dp))
             
+            // Other Common Bills Section
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Other Bills",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            
+                            Spacer(modifier = Modifier.width(12.dp))
+                            
+                            Column {
+                                Text(
+                                    text = if (isHindi) "अन्य सामान्य बिल" else "Other Common Bills",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (isHindi) "पानी, मेंटेनेंस आदि (5 फ्लैट में बांटा जाएगा)" else "Water, Maintenance etc. (divided by 5 flats)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                        
+                        // Add Bill Button
+                        FilledTonalButton(
+                            onClick = { showAddBillDialog = true },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isHindi) "जोड़ें" else "Add",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                    
+                    if (otherBills.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        otherBills.forEach { bill ->
+                            OtherBillRow(
+                                bill = bill,
+                                numberOfFlats = flats.size,
+                                onRemove = {
+                                    otherBills = otherBills.filter { it.id != bill.id }
+                                },
+                                isHindi = isHindi
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        
+                        // Total Other Bills Summary
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isHindi) "कुल अन्य बिल:" else "Total Other Bills:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "₹${String.format("%.2f", otherBillsTotal)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isHindi) "प्रति फ्लैट:" else "Per Flat:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "₹${String.format("%.2f", otherBillsPerFlat)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (isHindi) "कोई अन्य बिल नहीं जोड़ा गया" else "No other bills added",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
             // Summary Section
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             ) {
                 Column(
@@ -527,7 +827,7 @@ fun HomeBillScreen() {
                         Spacer(modifier = Modifier.width(12.dp))
                         
                         Text(
-                            text = if (isHindi) "बिल सारांश" else stringResource(R.string.bill_summary),
+                            text = if (isHindi) "बिल सारांश" else "Bill Summary",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -550,7 +850,7 @@ fun HomeBillScreen() {
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = if (isHindi) "यूनिट्स विवरण" else stringResource(R.string.units_breakdown),
+                                text = if (isHindi) "यूनिट्स विवरण" else "Units Breakdown",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
@@ -559,15 +859,15 @@ fun HomeBillScreen() {
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             SummaryRow(
-                                if (isHindi) "कुल फ्लैट यूनिट्स:" else "${stringResource(R.string.total_flat_units)}:", 
+                                if (isHindi) "कुल फ्लैट यूनिट्स:" else "Total Flat Units:", 
                                 "$totalFlatUnits kWh"
                             )
                             SummaryRow(
-                                if (isHindi) "बिल्डिंग कुल यूनिट्स:" else "${stringResource(R.string.building_total_units)}:", 
+                                if (isHindi) "बिल्डिंग कुल यूनिट्स:" else "Building Total Units:", 
                                 "$totalBuildingUnits kWh"
                             ) 
                             SummaryRow(
-                                if (isHindi) "कॉमन एरिया यूनिट्स:" else "${stringResource(R.string.common_area_units)}:", 
+                                if (isHindi) "कॉमन एरिया यूनिट्स:" else "Common Area Units:", 
                                 "$commonAreaUnits kWh"
                             )
                         }
@@ -579,7 +879,7 @@ fun HomeBillScreen() {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -589,7 +889,7 @@ fun HomeBillScreen() {
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = if (isHindi) "कॉमन एरिया कॉस्ट" else stringResource(R.string.common_area_cost),
+                                text = if (isHindi) "अतिरिक्त खर्च (प्रति फ्लैट)" else "Additional Costs (Per Flat)",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
@@ -598,19 +898,32 @@ fun HomeBillScreen() {
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             SummaryRow(
-                                if (isHindi) "कुल कॉमन एरिया कॉस्ट:" else "${stringResource(R.string.total_common_area_cost)}:", 
-                                "₹${String.format("%.2f", commonAreaTotalCost)}"
+                                if (isHindi) "कॉमन एरिया बिजली:" else "Common Area Electricity:", 
+                                "₹${String.format("%.2f", commonAreaCostPerFlat)}"
                             )
+                            
+                            if (otherBillsTotal > 0) {
+                                SummaryRow(
+                                    if (isHindi) "अन्य बिल शेयर:" else "Other Bills Share:", 
+                                    "₹${String.format("%.2f", otherBillsPerFlat)}"
+                                )
+                            }
+                            
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            
                             SummaryRow(
-                                if (isHindi) "कॉस्ट प्रति फ्लैट:" else "${stringResource(R.string.cost_per_flat)}:", 
-                                "₹${String.format("%.2f", commonAreaCostPerFlat)}", 
+                                if (isHindi) "कुल अतिरिक्त प्रति फ्लैट:" else "Total Additional per Flat:", 
+                                "₹${String.format("%.2f", totalAdditionalCostPerFlat)}", 
                                 isHighlight = true
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             Text(
-                                text = if (isHindi) "नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर" else stringResource(R.string.note_final_bill),
+                                text = if (isHindi) 
+                                    "नोट: हर फ्लैट का अंतिम बिल = बिजली खपत + कॉमन एरिया + अन्य बिल" 
+                                else 
+                                    "Note: Each flat's final bill = Electricity usage + Common area + Other bills",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                 fontStyle = FontStyle.Italic
@@ -622,6 +935,249 @@ fun HomeBillScreen() {
             
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+    
+    // Add Bill Dialog
+    if (showAddBillDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showAddBillDialog = false
+                newBillName = ""
+                newBillAmount = ""
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHindi) "नया बिल जोड़ें" else "Add New Bill",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = if (isHindi) 
+                            "यह राशि सभी 5 फ्लैट में समान रूप से बांटी जाएगी।" 
+                        else 
+                            "This amount will be divided equally among all 5 flats.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = newBillName,
+                        onValueChange = { newBillName = it },
+                        label = { Text(if (isHindi) "बिल का नाम" else "Bill Name") },
+                        placeholder = { Text(if (isHindi) "जैसे: पानी, मेंटेनेंस" else "e.g., Water, Maintenance") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedTextField(
+                        value = newBillAmount,
+                        onValueChange = { newValue ->
+                            if (newValue.matches(Regex("^\\d{0,7}(\\.\\d{0,2})?$")) || newValue.isEmpty()) {
+                                newBillAmount = newValue
+                            }
+                        },
+                        label = { Text(if (isHindi) "कुल राशि (₹)" else "Total Amount (₹)") },
+                        placeholder = { Text("0.00") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Text("₹") }
+                    )
+                    
+                    if (newBillAmount.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val perFlat = (newBillAmount.toDoubleOrNull() ?: 0.0) / flats.size
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (isHindi) "प्रति फ्लैट:" else "Per Flat:",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "₹${String.format("%.2f", perFlat)}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newBillName.isNotBlank() && newBillAmount.isNotBlank()) {
+                            otherBills = otherBills + OtherBill(
+                                name = newBillName.trim(),
+                                amount = newBillAmount
+                            )
+                            showAddBillDialog = false
+                            newBillName = ""
+                            newBillAmount = ""
+                        }
+                    },
+                    enabled = newBillName.isNotBlank() && newBillAmount.isNotBlank()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isHindi) "जोड़ें" else "Add")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showAddBillDialog = false
+                        newBillName = ""
+                        newBillAmount = ""
+                    }
+                ) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel")
+                }
+            }
+        )
+    }
+    
+    // Save Confirmation Dialog
+    if (showSaveConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveConfirmDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHindi) "सेव और शेयर करें" else "Save & Share",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = if (isHindi) 
+                            "शेयर करने पर यह डेटा डेटाबेस में सेव हो जाएगा और अगले महीने के लिए 'पिछला यूनिट' के रूप में उपयोग होगा।" 
+                        else 
+                            "On sharing, this data will be saved to database and will be used as 'Previous Units' for next month.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isHindi) 
+                                    "⚠️ सुनिश्चित करें कि सभी रीडिंग सही हैं, अन्यथा अगले महीने की गणना गलत हो सकती है!" 
+                                else 
+                                    "⚠️ Make sure all readings are correct, otherwise next month's calculation may be wrong!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSaveConfirmDialog = false
+                        saveAndShare()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isHindi) "सेव और शेयर करें" else "Save & Share")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveConfirmDialog = false }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel")
+                }
+            }
+        )
+    }
+    
+    // Save Success Dialog
+    if (showSaveSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveSuccessDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHindi) "सफलतापूर्वक सेव हुआ!" else "Saved Successfully!",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = if (isHindi) 
+                        "सभी रीडिंग डेटाबेस में सेव हो गई हैं। अगले महीने में वर्तमान रीडिंग स्वचालित रूप से 'पिछला यूनिट' के रूप में दिखाई देंगी।" 
+                    else 
+                        "All readings have been saved to database. Next month, current readings will automatically appear as 'Previous Units'.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showSaveSuccessDialog = false }) {
+                    Text(if (isHindi) "ठीक है" else "OK")
+                }
+            }
+        )
     }
     
     // Reset confirmation dialog
@@ -637,20 +1193,20 @@ fun HomeBillScreen() {
             text = {
                 Text(
                     text = if (isHindi) 
-                        "क्या आप वाकई सभी फील्ड्स को रीसेट करना चाहते हैं? यह सभी डेटा को साफ़ कर देगा।" 
+                        "क्या आप वाकई सभी फील्ड्स को रीसेट करना चाहते हैं? यह केवल वर्तमान रीडिंग साफ़ करेगा, पिछली रीडिंग बनी रहेंगी।" 
                     else 
-                        "Are you sure you want to reset all fields? This will clear all data.",
+                        "Are you sure you want to reset all fields? This will only clear current readings, previous readings will remain.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // Reset all form fields
                         monthlyBillAmount = ""
-                        unitsUsed = ""
+                        buildingUnits = ""
                         ratePerUnit = "0.00"
-                        flats = flats.map { it.copy(units = "") }
+                        flats = flats.map { it.copy(currentUnits = "") }
+                        otherBills = emptyList()
                         showResetDialog = false
                         
                         Toast.makeText(
@@ -667,9 +1223,7 @@ fun HomeBillScreen() {
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showResetDialog = false }
-                ) {
+                TextButton(onClick = { showResetDialog = false }) {
                     Text(
                         text = if (isHindi) "रद्द करें" else "Cancel",
                         color = MaterialTheme.colorScheme.primary
@@ -716,11 +1270,17 @@ fun InputStatCard(
                 value = value,
                 onValueChange = onValueChange,
                 placeholder = {
-                    Text(
-                        text = placeholder,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = placeholder,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 },
                 textStyle = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
@@ -751,8 +1311,6 @@ fun InputStatCard(
     }
 }
 
-
-
 @Composable
 fun FlatInputRow(
     flat: Flat,
@@ -761,52 +1319,132 @@ fun FlatInputRow(
     commonAreaCostPerFlat: Double = 0.0,
     isHindi: Boolean = false
 ) {
-    val flatIndividualCost = (flat.units.toIntOrNull() ?: 0) * rate
+    val unitsConsumed = flat.unitsConsumed
+    val flatIndividualCost = unitsConsumed * rate
     val flatTotalCost = flatIndividualCost + commonAreaCostPerFlat
+    val hasWarning = flat.currentUnits.isNotBlank() && 
+                     (flat.currentUnits.toIntOrNull() ?: 0) < (flat.previousUnits.toIntOrNull() ?: 0)
     
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            containerColor = if (hasWarning) 
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+            else 
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         ),
         shape = RoundedCornerShape(8.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
-            // First row: Name and Input field
+            // Input row: Name, Previous, Current
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Flat name
                 Text(
                     text = flat.name,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.width(80.dp)
+                    modifier = Modifier.width(70.dp)
                 )
                 
+                // Previous reading (editable)
                 OutlinedTextField(
-                    value = flat.units,
+                    value = flat.previousUnits,
                     onValueChange = { newValue ->
-                        // Units validation: max 6 digits integer only
                         if (newValue.matches(Regex("^\\d{0,6}$")) || newValue.isEmpty()) {
-                            onFlatChange(flat.copy(units = newValue))
+                            onFlatChange(flat.copy(previousUnits = newValue.ifEmpty { "0" }))
                         }
                     },
-                    placeholder = { Text("0") },
+                    placeholder = { 
+                        Text(
+                            text = "0",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                )
+                
+                // Current reading
+                OutlinedTextField(
+                    value = flat.currentUnits,
+                    onValueChange = { newValue ->
+                        if (newValue.matches(Regex("^\\d{0,6}$")) || newValue.isEmpty()) {
+                            onFlatChange(flat.copy(currentUnits = newValue))
+                        }
+                    },
+                    placeholder = { 
+                        Text(
+                            text = "0",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
                 )
             }
             
-            // Second row: Cost calculation
-            if (flat.units.isNotBlank()) {
+            // Warning if current < previous
+            if (hasWarning) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isHindi) "वर्तमान < पिछला (मीटर बदला?)" else "Current < Previous (meter replaced?)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            
+            // Cost calculation (only show if current units entered)
+            if (flat.currentUnits.isNotBlank() && unitsConsumed > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 Row(
@@ -814,11 +1452,18 @@ fun FlatInputRow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (isHindi) "कुल बिल:" else "${stringResource(R.string.total_bill)}:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
+                    Column {
+                        Text(
+                            text = if (isHindi) "खपत: $unitsConsumed kWh" else "Consumed: $unitsConsumed kWh",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = "(${flat.currentUnits} - ${flat.previousUnits})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
                     
                     Column(
                         horizontalAlignment = Alignment.End
@@ -861,7 +1506,7 @@ fun SummaryRow(
             color = if (isHighlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
         
-    Text(
+        Text(
             text = value,
             style = if (isHighlight) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             fontWeight = if (isHighlight) FontWeight.Bold else FontWeight.Medium,
@@ -870,7 +1515,71 @@ fun SummaryRow(
     }
 }
 
+@Composable
+fun OtherBillRow(
+    bill: OtherBill,
+    numberOfFlats: Int,
+    onRemove: () -> Unit,
+    isHindi: Boolean
+) {
+    val perFlat = if (numberOfFlats > 0) bill.amountValue / numberOfFlats else 0.0
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = bill.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Row {
+                    Text(
+                        text = "₹${bill.amount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = " → ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = "₹${String.format("%.2f", perFlat)} ${if (isHindi) "प्रति फ्लैट" else "per flat"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = if (isHindi) "हटाएं" else "Remove",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
 
+// ==================== PDF Generation ====================
 
 fun generatePdfBill(
     context: Context,
@@ -878,30 +1587,22 @@ fun generatePdfBill(
     totalUnits: String,
     flats: List<Flat>,
     commonAreaCostPerFlat: Double,
+    otherBills: List<OtherBill>,
+    otherBillsPerFlat: Double,
+    rate: Double,
     isHindi: Boolean
 ) {
-    val rate = if (totalBill.isNotBlank() && totalUnits.isNotBlank()) {
-        val bill = totalBill.toDoubleOrNull() ?: 0.0
-        val units = totalUnits.toDoubleOrNull() ?: 0.0
-        if (units > 0) bill / units else 0.0
-    } else 0.0
-    
-    val totalFlatUnits = flats.sumOf { it.units.toIntOrNull() ?: 0 }
+    val totalFlatUnits = flats.sumOf { it.unitsConsumed }
     val buildingUnits = totalUnits.toIntOrNull() ?: 0
     val commonAreaUnits = if (buildingUnits > totalFlatUnits) buildingUnits - totalFlatUnits else 0
+    val totalAdditionalPerFlat = commonAreaCostPerFlat + otherBillsPerFlat
     
     try {
-        // Create a new PDF document
         val pdfDocument = PdfDocument()
-        
-        // Create a page description
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 size
-        
-        // Start a page
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
         val page = pdfDocument.startPage(pageInfo)
         val canvas = page.canvas
         
-        // Define paint objects for different text styles
         val titlePaint = Paint().apply {
             color = android.graphics.Color.BLACK
             textSize = 24f
@@ -930,25 +1631,20 @@ fun generatePdfBill(
             isAntiAlias = true
         }
         
-        // Start drawing on the PDF
         var yPosition = 60f
         
-        // Title
         val title = if (isHindi) "UJHomeBill - बिजली बिल रिपोर्ट" else "UJHomeBill - Electricity Bill Report"
         canvas.drawText(title, 50f, yPosition, titlePaint)
         yPosition += 40f
         
-        // Date
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
         val currentDate = dateFormat.format(Date())
         canvas.drawText(if (isHindi) "दिनांक: $currentDate" else "Date: $currentDate", 50f, yPosition, normalPaint)
         yPosition += 30f
         
-        // Line separator
         canvas.drawLine(50f, yPosition, 545f, yPosition, normalPaint)
         yPosition += 30f
         
-        // Bill Summary Section
         canvas.drawText(if (isHindi) "बिल सारांश" else "Bill Summary", 50f, yPosition, headingPaint)
         yPosition += 25f
         
@@ -959,7 +1655,6 @@ fun generatePdfBill(
         canvas.drawText(if (isHindi) "दर प्रति यूनिट: ₹${String.format("%.2f", rate)}/kWh" else "Rate per Unit: ₹${String.format("%.2f", rate)}/kWh", 70f, yPosition, normalPaint)
         yPosition += 30f
         
-        // Units Breakdown Section
         canvas.drawText(if (isHindi) "यूनिट्स विवरण" else "Units Breakdown", 50f, yPosition, headingPaint)
         yPosition += 25f
         
@@ -970,55 +1665,68 @@ fun generatePdfBill(
         canvas.drawText(if (isHindi) "कॉमन एरिया यूनिट्स: $commonAreaUnits kWh" else "Common Area Units: $commonAreaUnits kWh", 70f, yPosition, normalPaint)
         yPosition += 30f
         
-        // Flat-wise Details Section
+        // Other Bills Section
+        if (otherBills.isNotEmpty()) {
+            canvas.drawText(if (isHindi) "अन्य सामान्य बिल" else "Other Common Bills", 50f, yPosition, headingPaint)
+            yPosition += 25f
+            
+            otherBills.forEach { bill ->
+                val perFlat = bill.amountValue / flats.size
+                canvas.drawText("${bill.name}: ₹${bill.amount} (₹${String.format("%.2f", perFlat)} ${if (isHindi) "प्रति फ्लैट" else "per flat"})", 70f, yPosition, normalPaint)
+                yPosition += 20f
+            }
+            
+            canvas.drawText(if (isHindi) "कुल अन्य बिल प्रति फ्लैट: ₹${String.format("%.2f", otherBillsPerFlat)}" else "Total Other Bills per Flat: ₹${String.format("%.2f", otherBillsPerFlat)}", 70f, yPosition, normalPaint)
+            yPosition += 30f
+        }
+        
         canvas.drawText(if (isHindi) "फ्लैट-वार विवरण" else "Flat-wise Details", 50f, yPosition, headingPaint)
         yPosition += 25f
         
         flats.forEach { flat ->
-            if (flat.units.isNotBlank()) {
-                val individualCost = (flat.units.toIntOrNull() ?: 0) * rate
-                val totalCost = individualCost + commonAreaCostPerFlat
+            if (flat.currentUnits.isNotBlank()) {
+                val unitsConsumed = flat.unitsConsumed
+                val individualCost = unitsConsumed * rate
+                val totalCost = individualCost + totalAdditionalPerFlat
                 
                 canvas.drawText("${flat.name}:", 70f, yPosition, normalPaint)
                 yPosition += 15f
-                canvas.drawText(if (isHindi) "  यूनिट्स: ${flat.units} kWh" else "  Units: ${flat.units} kWh", 90f, yPosition, smallPaint)
+                canvas.drawText(if (isHindi) "  पिछला: ${flat.previousUnits} | वर्तमान: ${flat.currentUnits} | खपत: $unitsConsumed kWh" else "  Previous: ${flat.previousUnits} | Current: ${flat.currentUnits} | Consumed: $unitsConsumed kWh", 90f, yPosition, smallPaint)
                 yPosition += 15f
                 canvas.drawText(if (isHindi) "  व्यक्तिगत कॉस्ट: ₹${String.format("%.2f", individualCost)}" else "  Individual Cost: ₹${String.format("%.2f", individualCost)}", 90f, yPosition, smallPaint)
                 yPosition += 15f
-                canvas.drawText(if (isHindi) "  कॉमन एरिया शेयर: ₹${String.format("%.2f", commonAreaCostPerFlat)}" else "  Common Area Share: ₹${String.format("%.2f", commonAreaCostPerFlat)}", 90f, yPosition, smallPaint)
+                canvas.drawText(if (isHindi) "  अतिरिक्त शेयर: ₹${String.format("%.2f", totalAdditionalPerFlat)} (कॉमन + अन्य)" else "  Additional Share: ₹${String.format("%.2f", totalAdditionalPerFlat)} (Common + Others)", 90f, yPosition, smallPaint)
                 yPosition += 15f
                 canvas.drawText(if (isHindi) "  कुल बिल: ₹${String.format("%.2f", totalCost)}" else "  Total Bill: ₹${String.format("%.2f", totalCost)}", 90f, yPosition, normalPaint)
                 yPosition += 25f
             }
         }
         
-        // Common Area Cost Section
         yPosition += 10f
-        canvas.drawText(if (isHindi) "कॉमन एरिया कॉस्ट" else "Common Area Cost", 50f, yPosition, headingPaint)
+        canvas.drawText(if (isHindi) "अतिरिक्त खर्च सारांश" else "Additional Costs Summary", 50f, yPosition, headingPaint)
         yPosition += 25f
         
         val commonAreaTotalCost = commonAreaUnits * rate
-        canvas.drawText(if (isHindi) "कुल कॉमन एरिया कॉस्ट: ₹${String.format("%.2f", commonAreaTotalCost)}" else "Total Common Area Cost: ₹${String.format("%.2f", commonAreaTotalCost)}", 70f, yPosition, normalPaint)
+        canvas.drawText(if (isHindi) "कॉमन एरिया बिजली: ₹${String.format("%.2f", commonAreaTotalCost)} (₹${String.format("%.2f", commonAreaCostPerFlat)} प्रति फ्लैट)" else "Common Area Electricity: ₹${String.format("%.2f", commonAreaTotalCost)} (₹${String.format("%.2f", commonAreaCostPerFlat)} per flat)", 70f, yPosition, normalPaint)
         yPosition += 20f
-        canvas.drawText(if (isHindi) "कॉस्ट प्रति फ्लैट: ₹${String.format("%.2f", commonAreaCostPerFlat)}" else "Cost per Flat: ₹${String.format("%.2f", commonAreaCostPerFlat)}", 70f, yPosition, normalPaint)
+        if (otherBills.isNotEmpty()) {
+            val otherBillsTotal = otherBills.sumOf { it.amountValue }
+            canvas.drawText(if (isHindi) "अन्य बिल: ₹${String.format("%.2f", otherBillsTotal)} (₹${String.format("%.2f", otherBillsPerFlat)} प्रति फ्लैट)" else "Other Bills: ₹${String.format("%.2f", otherBillsTotal)} (₹${String.format("%.2f", otherBillsPerFlat)} per flat)", 70f, yPosition, normalPaint)
+            yPosition += 20f
+        }
+        canvas.drawText(if (isHindi) "कुल अतिरिक्त प्रति फ्लैट: ₹${String.format("%.2f", totalAdditionalPerFlat)}" else "Total Additional per Flat: ₹${String.format("%.2f", totalAdditionalPerFlat)}", 70f, yPosition, normalPaint)
         yPosition += 30f
         
-        // Footer note
         yPosition += 20f
-        canvas.drawText(if (isHindi) "नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर" else "Note: Each flat's final bill = Individual cost + Common area share", 50f, yPosition, smallPaint)
+        canvas.drawText(if (isHindi) "नोट: हर फ्लैट का अंतिम बिल = बिजली खपत + कॉमन एरिया + अन्य बिल" else "Note: Each flat's final bill = Electricity usage + Common area + Other bills", 50f, yPosition, smallPaint)
         
-        // Finish the page
         pdfDocument.finishPage(page)
         
-        // Save the PDF
         val fileName = "UJHomeBill_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.pdf"
         
-        // Use app-specific directory which doesn't require permission
         val pdfDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // For Android 10+, use app-specific external storage
             File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "UJHomeBill")
         } else {
-            // For older versions, use external storage
             File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "UJHomeBill")
         }
         
@@ -1030,11 +1738,9 @@ fun generatePdfBill(
         pdfDocument.writeTo(FileOutputStream(file))
         pdfDocument.close()
         
-        // Show success message with shorter path
         val shortPath = "UJHomeBill/$fileName"
         Toast.makeText(context, if (isHindi) "PDF सेव किया गया: $shortPath" else "PDF saved: $shortPath", Toast.LENGTH_LONG).show()
         
-        // Open the PDF using FileProvider for security
         try {
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -1058,23 +1764,23 @@ fun generatePdfBill(
     }
 }
 
+// ==================== Share Function ====================
+
 fun shareElectricityBill(
     context: Context,
     totalBill: String,
     totalUnits: String,
     flats: List<Flat>,
     commonAreaCostPerFlat: Double,
+    otherBills: List<OtherBill>,
+    otherBillsPerFlat: Double,
+    rate: Double,
     isHindi: Boolean
 ) {
-    val rate = if (totalBill.isNotBlank() && totalUnits.isNotBlank()) {
-        val bill = totalBill.toDoubleOrNull() ?: 0.0
-        val units = totalUnits.toDoubleOrNull() ?: 0.0
-        if (units > 0) bill / units else 0.0
-    } else 0.0
-    
-    val totalFlatUnits = flats.sumOf { it.units.toIntOrNull() ?: 0 }
+    val totalFlatUnits = flats.sumOf { it.unitsConsumed }
     val buildingUnits = totalUnits.toIntOrNull() ?: 0
     val commonAreaUnits = if (buildingUnits > totalFlatUnits) buildingUnits - totalFlatUnits else 0
+    val totalAdditionalPerFlat = commonAreaCostPerFlat + otherBillsPerFlat
     
     val shareText = if (isHindi) {
         buildString {
@@ -1087,21 +1793,36 @@ fun shareElectricityBill(
             appendLine("• कॉमन एरिया यूनिट्स: $commonAreaUnits kWh")
             appendLine("• दर प्रति यूनिट: ₹${String.format("%.2f", rate)}/kWh")
             appendLine()
+            
+            // Other bills section
+            if (otherBills.isNotEmpty()) {
+                appendLine("📋 अन्य सामान्य बिल:")
+                otherBills.forEach { bill ->
+                    val perFlat = bill.amountValue / flats.size
+                    appendLine("• ${bill.name}: ₹${bill.amount} (₹${String.format("%.2f", perFlat)}/फ्लैट)")
+                }
+                appendLine()
+            }
+            
             appendLine("💰 फ्लैट-वार बिल:")
             flats.forEach { flat ->
-                if (flat.units.isNotBlank()) {
-                    val units = flat.units.toIntOrNull() ?: 0
-                    val individualCost = units * rate
-                    val totalCost = individualCost + commonAreaCostPerFlat
-                    appendLine("${flat.name}: $units kWh - ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
+                if (flat.currentUnits.isNotBlank()) {
+                    val unitsConsumed = flat.unitsConsumed
+                    val individualCost = unitsConsumed * rate
+                    val totalCost = individualCost + totalAdditionalPerFlat
+                    appendLine("${flat.name}: ${flat.previousUnits}→${flat.currentUnits} = $unitsConsumed kWh")
+                    appendLine("   ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", totalAdditionalPerFlat)})")
                 }
             }
             appendLine()
-            appendLine("🏢 कॉमन एरिया कॉस्ट:")
-            appendLine("• कुल: ₹${String.format("%.2f", commonAreaUnits * rate)}")
-            appendLine("• प्रति फ्लैट: ₹${String.format("%.2f", commonAreaCostPerFlat)}")
+            appendLine("🏢 अतिरिक्त खर्च (प्रति फ्लैट):")
+            appendLine("• कॉमन एरिया बिजली: ₹${String.format("%.2f", commonAreaCostPerFlat)}")
+            if (otherBills.isNotEmpty()) {
+                appendLine("• अन्य बिल: ₹${String.format("%.2f", otherBillsPerFlat)}")
+            }
+            appendLine("• कुल अतिरिक्त: ₹${String.format("%.2f", totalAdditionalPerFlat)}")
             appendLine()
-            appendLine("💡 नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर")
+            appendLine("💡 नोट: हर फ्लैट का अंतिम बिल = बिजली खपत + कॉमन एरिया + अन्य बिल")
         }
     } else {
         buildString {
@@ -1114,21 +1835,36 @@ fun shareElectricityBill(
             appendLine("• Common Area Units: $commonAreaUnits kWh")
             appendLine("• Rate per Unit: ₹${String.format("%.2f", rate)}/kWh")
             appendLine()
+            
+            // Other bills section
+            if (otherBills.isNotEmpty()) {
+                appendLine("📋 Other Common Bills:")
+                otherBills.forEach { bill ->
+                    val perFlat = bill.amountValue / flats.size
+                    appendLine("• ${bill.name}: ₹${bill.amount} (₹${String.format("%.2f", perFlat)}/flat)")
+                }
+                appendLine()
+            }
+            
             appendLine("💰 Flat-wise Bills:")
             flats.forEach { flat ->
-                if (flat.units.isNotBlank()) {
-                    val units = flat.units.toIntOrNull() ?: 0
-                    val individualCost = units * rate
-                    val totalCost = individualCost + commonAreaCostPerFlat
-                    appendLine("${flat.name}: $units kWh - ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", commonAreaCostPerFlat)})")
+                if (flat.currentUnits.isNotBlank()) {
+                    val unitsConsumed = flat.unitsConsumed
+                    val individualCost = unitsConsumed * rate
+                    val totalCost = individualCost + totalAdditionalPerFlat
+                    appendLine("${flat.name}: ${flat.previousUnits}→${flat.currentUnits} = $unitsConsumed kWh")
+                    appendLine("   ₹${String.format("%.2f", totalCost)} (₹${String.format("%.0f", individualCost)} + ₹${String.format("%.0f", totalAdditionalPerFlat)})")
                 }
             }
             appendLine()
-            appendLine("🏢 Common Area Cost:")
-            appendLine("• Total: ₹${String.format("%.2f", commonAreaUnits * rate)}")
-            appendLine("• Per Flat: ₹${String.format("%.2f", commonAreaCostPerFlat)}")
+            appendLine("🏢 Additional Costs (Per Flat):")
+            appendLine("• Common Area Electricity: ₹${String.format("%.2f", commonAreaCostPerFlat)}")
+            if (otherBills.isNotEmpty()) {
+                appendLine("• Other Bills: ₹${String.format("%.2f", otherBillsPerFlat)}")
+            }
+            appendLine("• Total Additional: ₹${String.format("%.2f", totalAdditionalPerFlat)}")
             appendLine()
-            appendLine("💡 Note: Each flat's final bill = Individual cost + Common area share")
+            appendLine("💡 Note: Each flat's final bill = Electricity usage + Common area + Other bills")
         }
     }
     
@@ -1140,12 +1876,4 @@ fun shareElectricityBill(
     
     val chooser = Intent.createChooser(intent, if (isHindi) "बिल शेयर करें" else "Share Bill")
     context.startActivity(chooser)
-}
-
-@Preview(showBackground = true)
-@Composable
-fun HomeBillScreenPreview() {
-    HomeBillTheme {
-        HomeBillScreen()
-    }
 }

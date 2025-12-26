@@ -3,196 +3,219 @@
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://android.com)
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-blue.svg)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-orange.svg)](https://developer.android.com/jetpack/compose)
+[![Version](https://img.shields.io/badge/Version-2.0-blue.svg)]()
 
 A modern Android application built with Jetpack Compose for calculating and managing electricity bills across multiple flats in a building. Perfect for apartment buildings, housing societies, and shared living spaces.
 
-## 📱 Screenshot
+## 📱 Screenshots
 
 ![UJHomeBill App Screenshot](Screenshot_20250823_195500.png)
 
 ## ✨ Features
 
 ### 🏠 **Multi-Flat Bill Management**
-- Calculate electricity bills for up to 5 flats (Kailash, Ajay, Manoj, Rakesh, Ramesh)
-- Individual unit consumption tracking per flat
+- Calculate electricity bills for 5 flats (Kailash, Ajay, Manoj, Rakesh, Ramesh)
+- **Previous & Current Unit Tracking** - Track meter readings month-over-month
 - Automatic rate calculation based on total bill and units
+- Units consumed = Current Reading - Previous Reading
+
+### 💾 **Offline Database Storage** *(New in v2.0)*
+- **Room Database** for persistent local storage
+- Saves all bill records with complete details
+- **Auto-saves previous readings** - Next month auto-fills from database
+- View historical bill data in Settings
+- No internet required - fully offline app
+
+### 📋 **Other Common Bills** *(New in v2.0)*
+- Add additional shared bills (Water, Maintenance, etc.)
+- Automatically divided equally among all flats
+- Included in final bill calculation
+- Supports multiple bills per month
 
 ### ⚡ **Smart Calculations**
-- **Auto Rate Calculation**: Automatically calculates rate per unit (₹/kWh) based on total bill and building units
-- **Common Area Distribution**: Fairly distributes common area electricity costs across all flats
-- **Real-time Updates**: Instant calculation updates as you enter data
+- **Auto Rate Calculation**: Rate per unit (₹/kWh) from total bill and units
+- **Common Area Distribution**: Fair distribution across all flats
+- **Other Bills Share**: Additional bills split equally
+- **Real-time Updates**: Instant calculation as you type
+- **Final Bill** = Electricity Usage + Common Area Share + Other Bills Share
+
+### ⚙️ **Settings & Analytics** *(New in v2.0)*
+- **User Profile**: Set your name, view stats
+- **Yearly Analytics**: 
+  - Total yearly bill amount
+  - Average monthly bill
+  - Total units consumed
+  - Average rate per kWh
+  - Monthly breakdown table
+- **All Years Summary**: Compare year-over-year
+- **Password-Protected Data Deletion**: Password `1234` to clear database
 
 ### 🌐 **Bilingual Support**
 - **Hindi & English**: Complete bilingual interface
 - Easy language toggle with EN/हिं button
-- All labels, messages, and content available in both languages
-
-### 📊 **Comprehensive Bill Breakdown**
-- Total flat units consumption
-- Building total units (including common areas)
-- Common area units calculation
-- Rate per unit display
-- Individual flat cost breakdown
-- Common area cost distribution
-
-### 🔧 **Input Validation**
-- **Money Fields**: Validates up to 7 digits + 2 decimal places (₹9999999.99)
-- **Units Fields**: Validates up to 6 digits integer only (999999 kWh)
-- Real-time input filtering prevents invalid entries
-- Error-free calculations with validated inputs
+- Settings page also supports both languages
 
 ### 📄 **Export & Share Options**
-- **PDF Generation**: Create professional PDF bills with complete breakdown
-- **Share Functionality**: Share bill details via WhatsApp, email, SMS, etc.
-- **Enhanced Share Format**: Includes flat-wise units for next month reference
-- **Reset Option**: Clear all fields with confirmation dialog
+- **PDF Generation**: Professional PDF bills
+- **Auto-Save on Share**: Saves to database when sharing
+- **Confirmation Dialog**: Ensures correct data before saving
+- **Share via**: WhatsApp, Email, SMS, etc.
 
-## 🎨 **Modern UI Design**
+## 🎨 **UI Design**
 
-### **Header Section**
-- Beautiful gradient background (blue to green)
-- Language toggle button with professional styling
-- Action buttons: PDF Save, Share, Reset
-- Proper status bar handling for modern devices
+### **Clean Blue/White Theme**
+- **Primary Blue**: `#1E88E5`
+- **White Cards** with subtle shadows
+- **Light Gray Background**: `#F5F5F5`
+- Consistent across all screens
+- Works in both Light and Dark mode
 
-### **Input Cards**
-- Clean, card-based design for all inputs
-- Icon-based identification for easy understanding
-- Responsive layout for different screen sizes
-- Material Design 3 components
-
-### **Smart Layout**
-- Optimized for Samsung Galaxy S23+ and other modern devices
-- Proper spacing and padding
-- Edge-to-edge design with system bar awareness
+### **Modern Components**
+- Material Design 3
+- Centered input fields
+- Proper focus states
+- Edge-to-edge display
 
 ## 📋 **How to Use**
 
-1. **Enter Total Bill**: Input the monthly electricity bill amount
-2. **Enter Building Units**: Input total building electricity consumption
-3. **Add Flat Units**: Enter individual consumption for each flat
-4. **Auto Calculation**: App automatically calculates:
-   - Rate per unit
-   - Common area consumption
-   - Individual flat bills
-   - Common area cost distribution
-5. **Export/Share**: Use PDF or Share buttons to save/send bills
+### Monthly Bill Entry:
+1. **Enter Total Bill**: Monthly electricity bill amount (₹)
+2. **Enter Building Units**: Total building consumption (kWh)
+3. **Previous Units**: Auto-filled from last month (editable if needed)
+4. **Current Units**: Enter current meter reading for each flat
+5. **Add Other Bills** (optional): Water, Maintenance, etc.
+6. **Share**: Tap Share → Confirm → Data saves & shares
+
+### Settings:
+1. Tap ⚙️ icon to open Settings
+2. Set your name
+3. View yearly analytics
+4. Select year to see monthly breakdown
+5. Delete all data (password: `1234`)
 
 ## 🔢 **Calculation Logic**
 
 ```
 Rate per Unit = Total Bill ÷ Total Building Units
-Common Area Units = Building Total Units - Sum of All Flat Units
-Common Area Cost = Common Area Units × Rate per Unit
-Common Area Cost per Flat = Common Area Cost ÷ Number of Flats
-Final Flat Bill = (Flat Units × Rate per Unit) + Common Area Cost per Flat
+
+Units Consumed (per flat) = Current Reading - Previous Reading
+
+Common Area Units = Building Total - Sum of All Flat Units
+Common Area Cost per Flat = (Common Area Units × Rate) ÷ 5
+
+Other Bills per Flat = Total Other Bills ÷ 5
+
+Final Flat Bill = (Units Consumed × Rate) + Common Area Share + Other Bills Share
 ```
 
-## 📤 **Sample Shareable Messages**
+## 📤 **Sample Share Output**
 
-The app generates professional, formatted messages for easy sharing. Here are examples in both languages:
-
-### **Hindi Output Sample:**
-```
-🏠 UJHomeBill - बिजली बिल सारांश
-=========================================
-
-📊 यूनिट्स विवरण:
-• कुल फ्लैट यूनिट्स: 1324 kWh
-• बिल्डिंग कुल यूनिट्स: 1458 kWh
-• कॉमन एरिया यूनिट्स: 134 kWh
-• दर प्रति यूनिट: ₹8.53/kWh
-
-💰 फ्लैट-वार बिल:
-कैलाश: 485 kWh - ₹4367.07 (₹4138 + ₹229)
-अजय: 148 kWh - ₹1491.48 (₹1263 + ₹229)
-मनोज: 316 kWh - ₹2925.01 (₹2696 + ₹229)
-राकेश: 227 kWh - ₹2165.58 (₹1937 + ₹229)
-रमेश: 148 kWh - ₹1491.48 (₹1263 + ₹229)
-
-🏢 कॉमन एरिया कॉस्ट:
-• कुल: ₹1143.41
-• प्रति फ्लैट: ₹228.60
-
-💡 नोट: हर फ्लैट का अंतिम बिल = व्यक्तिगत कॉस्ट + कॉमन एरिया शेयर
-```
-
-### **English Output Sample:**
+### **English:**
 ```
 🏠 UJHomeBill - Electricity Bill Summary
 =========================================
 
 📊 Units Breakdown:
-• Total Flat Units: 1324 kWh
-• Building Total Units: 1458 kWh
-• Common Area Units: 134 kWh
-• Rate per Unit: ₹8.53/kWh
+• Total Flat Units: 250 kWh
+• Building Total Units: 300 kWh
+• Common Area Units: 50 kWh
+• Rate per Unit: ₹8.00/kWh
+
+📋 Other Common Bills:
+• Water: ₹500 (₹100.00/flat)
 
 💰 Flat-wise Bills:
-Kailash: 485 kWh - ₹4367.07 (₹4138 + ₹229)
-Ajay: 148 kWh - ₹1491.48 (₹1263 + ₹229)
-Manoj: 316 kWh - ₹2925.01 (₹2696 + ₹229)
-Rakesh: 227 kWh - ₹2165.58 (₹1937 + ₹229)
-Ramesh: 148 kWh - ₹1491.48 (₹1263 + ₹229)
+Kailash: 40→90 = 50 kWh
+   ₹580.00 (₹400 + ₹180)
+Ajay: 100→150 = 50 kWh
+   ₹580.00 (₹400 + ₹180)
+...
 
-🏢 Common Area Cost:
-• Total: ₹1143.41
-• Per Flat: ₹228.60
+🏢 Additional Costs (Per Flat):
+• Common Area Electricity: ₹80.00
+• Other Bills: ₹100.00
+• Total Additional: ₹180.00
 
-💡 Note: Each flat's final bill = Individual cost + Common area share
+💡 Note: Each flat's final bill = Electricity usage + Common area + Other bills
 ```
 
-### **Key Features of Shared Messages:**
-- **📱 WhatsApp/SMS Ready**: Formatted for messaging apps
-- **📊 Complete Breakdown**: Shows all calculations transparently
-- **🏠 Flat Units Included**: Helps with next month's readings
-- **💰 Cost Transparency**: Individual + common area costs shown
-- **🌐 Bilingual**: Available in Hindi and English
-- **📋 Copy-Paste Ready**: Professional formatting maintained
+## 🛡️ **Data Privacy**
 
-## 🛡️ **Data Validation**
-
-- **Money Fields**: `₹0.00` to `₹9999999.99`
-- **Units Fields**: `0` to `999999` kWh
-- **Real-time Validation**: Invalid inputs are blocked immediately
-- **Error Prevention**: No crashes due to invalid data entry
-
-## 🌟 **Key Benefits**
-
-- **Fair Distribution**: Ensures equitable sharing of common area costs
-- **Transparency**: Clear breakdown of all charges
-- **Time Saving**: Instant calculations eliminate manual work
-- **Professional Output**: PDF generation for record keeping
-- **User Friendly**: Intuitive interface in preferred language
-- **Mobile Optimized**: Perfect for on-the-go bill calculations
+- **100% Offline**: No data sent to servers
+- **Local Storage**: All data stored on device only
+- **No Permissions Required**: Uses app-private storage
+- **Secure Delete**: Password-protected data deletion
 
 ## 🔧 **Technical Details**
 
-- **Platform**: Android (API 21+)
-- **Language**: Kotlin
-- **UI Framework**: Jetpack Compose
-- **Architecture**: Modern Android development practices
-- **Design**: Material Design 3
-- **Features**: Edge-to-edge display, system bar integration
+| Component | Technology |
+|-----------|------------|
+| Platform | Android (API 24+) |
+| Language | Kotlin |
+| UI Framework | Jetpack Compose |
+| Database | Room Persistence Library |
+| Architecture | MVVM with ViewModel |
+| Navigation | Jetpack Navigation Compose |
+| Design | Material Design 3 |
+| Min SDK | 24 (Android 7.0) |
+| Target SDK | 35 (Android 15) |
+
+## 📦 **Project Structure**
+
+```
+com.uj.homebill/
+├── MainActivity.kt          # Main screen with bill calculator
+├── data/
+│   ├── database/
+│   │   ├── AppDatabase.kt   # Room database configuration
+│   │   ├── BillDao.kt       # Data Access Object
+│   │   └── Entities.kt      # Database entities
+│   └── repository/
+│       └── BillRepository.kt # Repository pattern
+├── screens/
+│   └── SettingsScreen.kt    # Settings & Analytics
+├── viewmodel/
+│   └── BillViewModel.kt     # ViewModel for UI state
+└── ui/theme/
+    ├── Color.kt             # Blue/White theme colors
+    ├── Theme.kt             # Material theme
+    └── Type.kt              # Typography
+```
 
 ## 📱 **Compatibility**
 
-- Android 5.0 (API 21) and above
-- Optimized for modern devices (Galaxy S23+, Pixel series, etc.)
+- Android 7.0 (API 24) and above
+- Optimized for modern devices
 - Responsive design for various screen sizes
-- Portrait orientation support
+- Portrait orientation
+- No storage permissions needed
 
 ## 🎯 **Use Cases**
 
-- **Apartment Buildings**: Split electricity bills among residents
-- **Housing Societies**: Manage common area electricity costs
+- **Apartment Buildings**: Split bills among residents
+- **Housing Societies**: Manage common area costs
 - **Shared Housing**: Fair distribution among roommates
-- **Property Management**: Professional bill calculation for tenants
-- **Personal Use**: Track and calculate household electricity expenses
+- **Property Management**: Professional billing for tenants
+- **Family Buildings**: Track consumption across family members
 
-## 📞 **About**
+## 📝 **Version History**
 
-UJHomeBill is designed to simplify electricity bill management for multi-unit buildings. With its intuitive interface, robust calculations, and professional output options, it's the perfect solution for fair and transparent bill distribution.
+### v2.0 (Current)
+- ✅ Offline database storage (Room)
+- ✅ Previous/Current unit tracking
+- ✅ Auto-save on share
+- ✅ Settings page with analytics
+- ✅ Other common bills feature
+- ✅ Yearly analytics & breakdown
+- ✅ Clean blue/white theme
+- ✅ Password-protected data deletion
+- ✅ Bilingual settings page
+
+### v1.0
+- Basic bill calculation
+- PDF generation
+- Share functionality
+- Hindi/English support
 
 ---
 

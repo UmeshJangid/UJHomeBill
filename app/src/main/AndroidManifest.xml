@@ -2,11 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Permissions for PDF generation and storage -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
-        android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
-        android:maxSdkVersion="32" />
+    <!-- No storage permissions needed - using app's private external storage (getExternalFilesDir) -->
+    <!-- PDF generation works on ALL Android versions without permissions -->
 
     <application
         android:allowBackup="true"
