@@ -200,7 +200,7 @@ com.uj.homebill/
 
 ## 📝 **Version History**
 
-### v2.0 (Current)
+### v3.0 (Current)
 - ✅ Offline database storage (Room)
 - ✅ Previous/Current unit tracking
 - ✅ Auto-save on share

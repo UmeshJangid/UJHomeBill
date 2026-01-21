@@ -712,7 +712,7 @@ fun SettingsScreen(
                             fontSize = 20.sp
                         )
                         Text(
-                            text = if (isHindi) "संस्करण 2.0" else "Version 2.0",
+                            text = if (isHindi) "संस्करण 3.0" else "Version 3.0",
                             fontSize = 14.sp,
                             color = GrayText
                         )
